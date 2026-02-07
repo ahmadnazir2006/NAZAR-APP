@@ -1,0 +1,37 @@
+import os
+import google.generativeai as genai
+
+# --- STEP 1: REMOVE GHOST KEYS ---
+# This deletes any system keys interfering with your script
+if "GOOGLE_API_KEY" in os.environ:
+    del os.environ["GOOGLE_API_KEY"]
+if "GOOG_API_KEY" in os.environ:
+    del os.environ["GOOG_API_KEY"]
+
+# --- STEP 2: PASTE YOUR NEW KEY HERE ---
+# Make sure there are NO spaces inside the quotes
+NEW_KEY = "AIzaSyCJIfiCo6nnSmGrGhypo_GtuJKjgWwEzfQ" 
+
+print(f"--- Using Key: {NEW_KEY[:5]}...{NEW_KEY[-5:]} ---")
+
+# --- STEP 3: CONFIGURE ---
+genai.configure(api_key=NEW_KEY)
+
+# --- STEP 4: TEST WITH A KNOWN MODEL FIRST ---
+# Do NOT use 'gemini-3' yet. We need to prove the KEY works first.
+# If 1.5 works, then the key is valid, and we can try finding Gemini 3.
+model_name = 'gemini-3-flash'
+
+print(f"--- Attempting to talk to Google using {model_name}... ---")
+
+try:
+    model = genai.GenerativeModel(model_name)
+    response = model.generate_content("Are you working?")
+    print("\n✅ SUCCESS! The API Key is VALID.")
+    print(f"Response: {response.text}")
+    print("\n---------------------------------------------------")
+    print("Now you can try changing 'gemini-1.5-flash' to the hackathon model name.")
+    print("If it fails afterwards, the problem is the MODEL NAME, not the key.")
+except Exception as e:
+    print("\n❌ STILL FAILING.")
+    print("Error Details:", e)
