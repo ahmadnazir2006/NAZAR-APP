@@ -39,11 +39,11 @@ FEATURE_PROMPTS = {
     "scene": "Scene Describer: Provide a vivid but brief description of the overall environment (e.g., 'You are in a park' or 'You are in a hospital hallway')."
 }
 
-@app.get("/api/health")
+@app.get("/health")
 async def health():
     return {"status": "alive"}
 
-@app.post("/api/analyze")
+@app.post("/analyze")
 async def analyze_image(
     file: UploadFile = File(...), 
     lang: str = Form("en"), 
