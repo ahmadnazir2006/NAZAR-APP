@@ -5,10 +5,6 @@ import type { Language } from "@/lib/translations"
 
 export type AppMode = "nav" | "read" | "money" | "hazard" | "scene";
 
-// --- SMART CONFIGURATION PER MODE ---
-// Hazard: Scans every 3s, ignores motion (safety first)
-// Money: Scans every 4s, ignores motion (precision)
-// Read: Scans every 7s, high quality for OCR
 const MODE_SETTINGS = {
   nav:    { interval: 5000, motion: 0.05, quality: 0.6 },
   read:   { interval: 7000, motion: 0.02, quality: 0.8 }, 
@@ -31,10 +27,8 @@ export function useObjectDetection(
   const isAnalyzingRef = useRef(false)
   const prevImageDataRef = useRef<ImageData | null>(null)
 
-  // --- MOTION DETECTION ---
   const hasMotion = useCallback((video: HTMLVideoElement) => {
     const settings = MODE_SETTINGS[mode];
-    // Hazard and Money modes don't care about motion—they always scan
     if (settings.motion === 0) return true; 
 
     const canvas = document.createElement("canvas")
@@ -64,17 +58,26 @@ export function useObjectDetection(
     return (diffPixels / (64 * 64)) > settings.motion
   }, [mode])
 
-  // --- API CALL ---
   const runAnalysis = async () => {
-
+    // 1. Safety Checks
     if (!videoRef.current || !isActive || isAnalyzingRef.current) return
     
-    // Check if we should skip based on motion
     if (!hasMotion(videoRef.current)) {
         console.log("Skipping scan: No motion.");
         return;
     }
 
+    // 2. Variable Check (BEFORE setting processing states)
+    const API_URL = process.env.NEXT_PUBLIC_API_URL;
+    if (!API_URL) {
+      setLastError("Configuration Error: API URL missing.");
+      return;
+    }
+
+    // Fix possible double-slash 404 error
+    const cleanBaseUrl = API_URL.replace(/\/$/, "");
+
+    // 3. Start Processing
     isAnalyzingRef.current = true
     setIsProcessing(true) 
 
@@ -83,7 +86,13 @@ export function useObjectDetection(
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     const ctx = canvas.getContext("2d")
-    if (!ctx) return
+    
+    if (!ctx) {
+      isAnalyzingRef.current = false;
+      setIsProcessing(false);
+      return;
+    }
+
     ctx.drawImage(video, 0, 0)
 
     canvas.toBlob(async (blob) => {
@@ -98,51 +107,46 @@ export function useObjectDetection(
       formData.append("lang", lang)
       formData.append("mode", mode)
 
-     const API_URL = process.env.NEXT_PUBLIC_API_URL;
+      try {
+        const response = await fetch(`${cleanBaseUrl}/analyze`, {
+          method: "POST",
+          body: formData,
+        });
 
-  // Error handling if variable is missing
-  if (!API_URL) {
-    console.error("Missing NEXT_PUBLIC_API_URL in .env.local");
-    return;
-  }
+        if (!response.ok) {
+           throw new Error(`Server returned ${response.status}`);
+        }
 
-  try {
-    const response = await fetch(`${API_URL}/analyze`, {
-      method: "POST",
-      body: formData,
-    });
         const data = await response.json()
         
         if (data.analysis) {
           setAnalysis(data.analysis)
           setLastError(null)
         } else if (data.error) {
-          if (data.error.includes("429") || data.error.includes("quota")) {
-            setLastError("API Busy. Please wait...")
-          } else {
-            setLastError(data.error)
-          }
+          setLastError(data.error)
         }
-      } catch (err) {
-        setLastError("Server not reachable.")
+      } catch (err: any) {
+        console.error("Analysis Error:", err);
+        setLastError(err.message || "Server not reachable.");
       } finally {
+        // ALWAYS reset these, even if the request fails
+        // This is what prevents the Exit button from freezing
         isAnalyzingRef.current = false
         setIsProcessing(false)
       }
     }, "image/jpeg", MODE_SETTINGS[mode].quality)
   }
 
-  // --- INTERVAL ENGINE ---
   useEffect(() => {
     if (isActive) {
-      runAnalysis() // Run immediately on start
-
+      runAnalysis() 
       const currentInterval = MODE_SETTINGS[mode].interval;
       intervalRef.current = setInterval(runAnalysis, currentInterval)
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current)
       setAnalysis("")
       setIsProcessing(false)
+      isAnalyzingRef.current = false
     }
 
     return () => {
