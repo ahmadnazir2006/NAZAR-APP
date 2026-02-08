@@ -1,3 +1,4 @@
+import asyncio
 import os
 import io
 import base64
@@ -44,7 +45,7 @@ async def health():
     return {"status": "alive"}
 
 @app.post("/analyze")
-async def analyze_image(
+async def analyze(
     file: UploadFile = File(...), 
     lang: str = Form("en"), 
     mode: str = Form("nav")
