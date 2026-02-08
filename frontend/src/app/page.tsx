@@ -14,8 +14,11 @@ export default function Page() {
   const [mode, setMode] = useState<AppMode>("nav") 
   const [isHolding, setIsHolding] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [showExitScreen, setShowExitScreen] = useState(false)
   
   const { videoRef, isActive, error, startCamera, stopCamera } = useCamera()
+  
+  // Extract isProcessing from the smart hook
   const { lastError: apiError, analysis, isProcessing } = useObjectDetection(videoRef, isActive, lang, mode)
   
   const t = translations[lang]
@@ -24,6 +27,7 @@ export default function Page() {
     if (typeof window === "undefined") return
     window.speechSynthesis.cancel()
     const utterance = new SpeechSynthesisUtterance(text)
+    
     const ttsLangs: Record<string, string> = {
       en: "en-US", ur: "ur-PK", hi: "hi-IN", ar: "ar-SA"
     }
@@ -31,34 +35,34 @@ export default function Page() {
     window.speechSynthesis.speak(utterance)
   }
 
-  // FIXED EXIT LOGIC: Just stops everything and returns to "Hold" state
-  const handleExit = () => {
-    setIsHolding(false)
-    stopCamera()
-    if (typeof window !== "undefined") {
-      window.speechSynthesis.cancel()
-    }
-  }
-
   const cycleMode = () => {
     const modes: AppMode[] = ["nav", "read", "money", "hazard", "scene"]
     const nextMode = modes[(modes.indexOf(mode) + 1) % modes.length]
     setMode(nextMode)
+
+    // Using the keys from translations.ts for descriptions
     const modeDesc = translations[lang][`${nextMode}Mode` as keyof typeof t] as string
     speak(modeDesc)
-    if (window.navigator.vibrate) window.navigator.vibrate(50)
+
+    if (window.navigator.vibrate) {
+        window.navigator.vibrate(nextMode === "hazard" ? [100, 50, 100] : 50)
+    }
   }
 
   useEffect(() => {
     if (analysis && isActive) {
       speak(analysis)
+      if (analysis.toLowerCase().includes("danger") || analysis.includes("خطرہ")) {
+        window.navigator.vibrate([500, 200, 500])
+      }
     }
   }, [analysis, isActive])
 
   const handleHoldStart = useCallback(() => {
     setIsHolding(true)
     startCamera()
-  }, [startCamera])
+    speak(t.cameraError === "کیمرہ دستیاب نہیں ہے" ? "کیمرہ آن ہو رہا ہے" : "Camera activating")
+  }, [startCamera, t])
 
   const handleHoldEnd = useCallback(() => {
     setIsHolding(false)
@@ -68,10 +72,10 @@ export default function Page() {
   return (
     <main className="fixed inset-0 overflow-hidden bg-background select-none">
       
-      {/* Top Bar - Increased padding (top-6, left-6, right-6) to fix squeezed buttons */}
-      <div className="absolute top-6 left-6 right-6 z-30 flex items-center justify-between gap-4">
+      {/* Top Smart Bar */}
+      <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between gap-3">
         <button 
-          onClick={handleExit}
+          onClick={() => setShowExitScreen(true)}
           className="w-14 h-14 rounded-full border-2 border-primary/40 bg-background/80 flex items-center justify-center text-primary"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -94,6 +98,7 @@ export default function Page() {
 
       <CameraPreview videoRef={videoRef} isActive={isActive} error={error} lang={lang} apiError={apiError} />
 
+      {/* Visual Feedback for AI Processing */}
       {isProcessing && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none">
           <div className="w-24 h-24 rounded-full border-4 border-primary border-t-transparent animate-spin shadow-2xl"></div>
@@ -107,7 +112,16 @@ export default function Page() {
         <TapToSeeButton lang={lang} onHoldStart={handleHoldStart} onHoldEnd={handleHoldEnd} isHolding={isHolding} />
       )}
 
-      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} lang={lang} onLanguageChange={setLang} />
+      <SettingsModal 
+        isOpen={settingsOpen} 
+        onClose={() => setSettingsOpen(false)} 
+        lang={lang} 
+        onLanguageChange={(newLang) => { 
+          setLang(newLang);
+          setSettingsOpen(false);
+          speak(translations[newLang].language + " set", newLang === "ur" ? "ur-PK" : "en-US");
+        }} 
+      />
     </main>
   )
 }
